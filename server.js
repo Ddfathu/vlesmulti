@@ -149,7 +149,6 @@ function readPathsFromFile(filename, defaultPath) {
 
 // Membuat berkas konfigurasi xray (MULTI-PATH & MULTI-UUID PINTAR JALUR TROJAN MUX)
 async function generateConfig() {
-  // Ambil daftar path dinamis dari file teks masing-masing
   const vlessPaths = readPathsFromFile('pathvless.txt', '/vless-argo');
   const vmessPaths = readPathsFromFile('pathvmess.txt', '/vmess-argo');
   const trojanPaths = readPathsFromFile('pathtrojan.txt', '/trojan-argo');
@@ -164,11 +163,8 @@ async function generateConfig() {
         uuidList = lines;
       }
     }
-  } catch (e) {
-    // Abaikan error, fallback ke uuid default
-  }
+  } catch (e) {}
 
-  // Petakan UUID ke format clients masing-masing protocol
   const vlessClients = uuidList.map(id => ({ id: id, level: 0 }));
   const vmessClients = uuidList.map(id => ({ id: id, alterId: 0 }));
   const trojanClients = uuidList.map(id => ({ password: id, level: 0 }));
@@ -177,7 +173,6 @@ async function generateConfig() {
   const inboundsList = [];
   let nextPort = 3100;
 
-  // Daftarkan semua daftar path VLESS secara otomatis
   vlessPaths.forEach(p => {
     const currentPort = nextPort++;
     fallbacksList.push({ path: p, dest: currentPort });
@@ -189,7 +184,6 @@ async function generateConfig() {
     });
   });
 
-  // Daftarkan semua daftar path VMESS secara otomatis (Bebas pakai nama path '/vmess' murni sekarang)
   vmessPaths.forEach(p => {
     const currentPort = nextPort++;
     fallbacksList.push({ path: p, dest: currentPort });
@@ -201,7 +195,6 @@ async function generateConfig() {
     });
   });
 
-  // Daftarkan semua daftar path TROJAN secara otomatis
   trojanPaths.forEach(p => {
     const currentPort = nextPort++;
     fallbacksList.push({ path: p, dest: currentPort });
@@ -213,10 +206,8 @@ async function generateConfig() {
     });
   });
 
-  // Salurkan sisa traffic non-vpn/web biasa ke Port Server HTTP lokal milik Node.js (PORT)
   fallbacksList.push({ dest: PORT });
 
-  // Pintu masuk gerbang utama dari Argo Tunnel (Diubah ke Trojan Multiplexer multi-uuid)
   inboundsList.unshift({
     port: ARGO_PORT,
     protocol: 'trojan',
@@ -317,7 +308,6 @@ async function downloadFilesAndRun() {
     return;
   }
 
-  // Memberikan izin eksekusi berkas binary (chmod 775)
   function authorizeFiles(filePaths) {
     const newPermissions = 0o775;
     filePaths.forEach(absoluteFilePath => {
@@ -335,7 +325,6 @@ async function downloadFilesAndRun() {
   const filesToAuthorize = NEZHA_PORT ? [npmPath, webPath, botPath] : [phpPath, webPath, botPath];
   authorizeFiles(filesToAuthorize);
 
-  // Menjalankan Nezha Agen Monitor
   if (NEZHA_SERVER && NEZHA_KEY) {
     if (!NEZHA_PORT) {
       const port = NEZHA_SERVER.includes(':') ? NEZHA_SERVER.split(':').pop() : '';
@@ -391,7 +380,6 @@ uuid: ${UUID}`;
     console.log('NEZHA variable is empty,skip running');
   }
 
-  // Menjalankan core xray backend
   const command1 = `nohup ${webPath} -c ${FILE_PATH}/config.json >/dev/null 2>&1 &`;
   try {
     await exec(command1);
@@ -401,7 +389,6 @@ uuid: ${UUID}`;
     console.error(`web running error: ${error}`);
   }
 
-  // Menjalankan daemon cloudflared argo tunnel
   if (fs.existsSync(botPath)) {
     let args;
 
@@ -424,7 +411,6 @@ uuid: ${UUID}`;
   await new Promise((resolve) => setTimeout(resolve, 5000));
 }
 
-// Mengembalikan URL berkas berdasarkan arsitektur sistem
 function getFilesForArchitecture(architecture) {
   let baseFiles;
   if (architecture === 'arm') {
@@ -462,7 +448,6 @@ function getFilesForArchitecture(architecture) {
   return baseFiles;
 }
 
-// Memproses konfigurasi berkas JSON terowongan tetap
 function argoType() {
   if (!ARGO_AUTH || !ARGO_DOMAIN) {
     console.log("ARGO_DOMAIN or ARGO_AUTH is empty, use quick tunnels");
@@ -499,6 +484,7 @@ async function extractDomains() {
     await generateLinks(argoDomain);
   } else {
     try {
+      if (!fs.existsSync(path.join(FILE_PATH, 'boot.log'))) return;
       const fileContent = fs.readFileSync(path.join(FILE_PATH, 'boot.log'), 'utf-8');
       const lines = fileContent.split('\n');
       const argoDomains = [];
@@ -512,32 +498,9 @@ async function extractDomains() {
 
       if (argoDomains.length > 0) {
         argoDomain = argoDomains[0];
-        console.log('ArgoDomain:', argoDomain);
-        await generateLinks(argoDomain);
-      } else {
-        console.log('ArgoDomain not found, re-running bot to obtain ArgoDomain');
-        fs.unlinkSync(path.join(FILE_PATH, 'boot.log'));
-        async function killBotProcess() {
-          try {
-            if (process.platform === 'win32') {
-              await exec(`taskkill /f /im ${botName}.exe > nul 2>&1`);
-            } else {
-              await exec(`pkill -f "[${botName.charAt(0)}]${botName.substring(1)}" > /dev/null 2>&1`);
-            }
-          } catch (error) {
-            // Mengabaikan keluaran
-          }
-        }
-        killBotProcess();
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const args = `tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile ${FILE_PATH}/boot.log --loglevel info --url http://localhost:${ARGO_PORT}`;
-        try {
-          await exec(`nohup ${botPath} ${args} >/dev/null 2>&1 &`);
-          console.log(`${botName} is running`);
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          await extractDomains();
-        } catch (error) {
-          console.error(`Error executing command: ${error}`);
+        if (currentActiveDomain !== argoDomain) {
+          console.log('ArgoDomain:', argoDomain);
+          await generateLinks(argoDomain);
         }
       }
     } catch (error) {
@@ -549,7 +512,6 @@ async function extractDomains() {
 // Tempat menyimpan data domain terowongan secara global agar bisa ditarik API UI
 let currentActiveDomain = '';
 
-// Mendapatkan informasi metadata penyedia internet (ISP) lokal server
 async function getMetaInfo() {
   try {
     const response1 = await axios.get('https://api.ip.sb/geoip', { headers: { 'User-Agent': 'Mozilla/5.0', timeout: 3000 } });
@@ -562,26 +524,21 @@ async function getMetaInfo() {
       if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
         return `${response2.data.countryCode}-${response2.data.org}`.replace(/\s+/g, '_');
       }
-    } catch (error) {
-      // Mengabaikan kegagalan API cadangan
-    }
+    } catch (error) {}
   }
   return 'Unknown';
 }
 
-// Membuat tautan mentah untuk daftar list node dan langganan (sub)
 async function generateLinks(argoDomain) {
-  currentActiveDomain = argoDomain; // Amankan alamat domain aktif ke memori global
+  currentActiveDomain = argoDomain; 
   const ISP = await getMetaInfo();
   const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
   return new Promise((resolve) => {
     setTimeout(() => {
-      // Link bawaan utama tetap digenerate berdasarkan path default index ke-0
       const defaultVless = readPathsFromFile('pathvless.txt', '/vless-argo')[0];
       const defaultVmess = readPathsFromFile('pathvmess.txt', '/vmess-argo')[0];
       const defaultTrojan = readPathsFromFile('pathtrojan.txt', '/trojan-argo')[0];
 
-      // FIX: Nilai Port dirubah menjadi integer murni agar kompatibel dengan standard parser VMESS client
       const VMESS = { v: '2', ps: `${nodeName}`, add: CFIP, port: CFPORT, id: UUID, aid: '0', scy: 'auto', net: 'ws', type: 'none', host: argoDomain, path: `${defaultVmess}?ed=2560`, tls: 'tls', sni: argoDomain, alpn: '', fp: 'firefox' };
       const subTxt = `
 vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=${encodeURIComponent(defaultVless + '?ed=2560')}#${nodeName}
@@ -590,10 +547,8 @@ vmess://${Buffer.from(JSON.stringify(VMESS)).toString('base64')}
 
 trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=${encodeURIComponent(defaultTrojan + '?ed=2560')}#${nodeName}
     `;
-      console.log(Buffer.from(subTxt).toString('base64'));
       fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
       console.log(`${FILE_PATH}/sub.txt saved successfully`);
-      // Menyimpan konten langganan ke variabel global untuk digunakan oleh server HTTP
       subContent = Buffer.from(subTxt).toString('base64');
       uploadNodes();
       resolve(subTxt);
@@ -601,104 +556,59 @@ trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&typ
   });
 }
 
-// Unggah node atau langganan secara otomatis ke server remote
 async function uploadNodes() {
   if (UPLOAD_URL && PROJECT_URL) {
     const subscriptionUrl = `${PROJECT_URL}/${SUB_PATH}`;
-    const jsonData = {
-      subscription: [subscriptionUrl]
-    };
+    const jsonData = { subscription: [subscriptionUrl] };
     try {
-      const response = await axios.post(`${UPLOAD_URL}/api/add-subscriptions`, jsonData, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
+      const response = await axios.post(`${UPLOAD_URL}/api/add-subscriptions`, jsonData, { headers: { 'Content-Type': 'application/json' } });
       if (response && response.status === 200) {
         console.log('Subscription uploaded successfully');
         return response;
-      } else {
-        return null;
-      }
+      } else { return null; }
     } catch (error) {
-      if (error.response) {
-        if (error.response.status === 400) {
-          // Mengabaikan jika langganan sudah ada
-        }
-      }
+      if (error.response && error.response.status === 400) {}
     }
   } else if (UPLOAD_URL) {
     if (!fs.existsSync(listPath)) return;
     const content = fs.readFileSync(listPath, 'utf-8');
     const nodes = content.split('\n').filter(line => /(vless|vmess|trojan|hysteria2|tuic):\/\//.test(line));
-
     if (nodes.length === 0) return;
-
     const jsonData = JSON.stringify({ nodes });
-
     try {
-      const response = await axios.post(`${UPLOAD_URL}/api/add-nodes`, jsonData, {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const response = await axios.post(`${UPLOAD_URL}/api/add-nodes`, jsonData, { headers: { 'Content-Type': 'application/json' } });
       if (response && response.status === 200) {
         console.log('Nodes uploaded successfully');
         return response;
-      } else {
-        return null;
-      }
-    } catch (error) {
-      return null;
-    }
-  } else {
-    // Mengabaikan proses unggah node
-    return;
-  }
+      } else { return null; }
+    } catch (error) { return null; }
+  } else { return; }
 }
 
-// Fitur anti-forensik: Menghapus berkas terkait dari penyimpanan disk setelah 90 detik operasional
 function cleanFiles() {
   setTimeout(() => {
     const filesToDelete = [bootLogPath, configPath, webPath, botPath];
-
-    if (NEZHA_PORT) {
-      filesToDelete.push(npmPath);
-    } else if (NEZHA_SERVER && NEZHA_KEY) {
-      filesToDelete.push(phpPath);
-    }
+    if (NEZHA_PORT) { filesToDelete.push(npmPath); } else if (NEZHA_SERVER && NEZHA_KEY) { filesToDelete.push(phpPath); }
 
     if (process.platform === 'win32') {
       exec(`del /f /q ${filesToDelete.join(' ')} > nul 2>&1`, (error) => {
         console.clear();
-        console.log('App is running');
-        console.log('Thank you for using this script, enjoy!');
+        console.log('App is running\nEnjoy!');
       });
     } else {
       exec(`rm -rf ${filesToDelete.join(' ')} >/dev/null 2>&1`, (error) => {
         console.clear();
-        console.log('App is running');
-        console.log('Thank you for using this script, enjoy!');
+        console.log('App is running\nEnjoy!');
       });
     }
   }, 90000);
 }
 cleanFiles();
 
-// Mengirimkan tugas kunjungan otomatis ke tautan proyek (Keep Alive Serv00)
 async function AddVisitTask() {
-  if (!AUTO_ACCESS || !PROJECT_URL) {
-    console.log("Skipping adding automatic access task");
-    return;
-  }
-
+  if (!AUTO_ACCESS || !PROJECT_URL) return;
   try {
-    const response = await axios.post('https://oooo.serv00.net/add-url', {
-      url: PROJECT_URL
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await axios.post('https://oooo.serv00.net/add-url', { url: PROJECT_URL }, { headers: { 'Content-Type': 'application/json' } });
     console.log(`automatic access task added successfully`);
     return response;
   } catch (error) {
@@ -707,7 +617,6 @@ async function AddVisitTask() {
   }
 }
 
-// Logika alur eksekusi utama saat boot server
 async function startserver() {
   try {
     argoType();
@@ -725,17 +634,14 @@ startserver().catch(error => {
   console.error('Unhandled error in startserver:', error);
 });
 
-// Membuat antarmuka Server HTTP lokal untuk web
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
-  // Jalur Rute Langganan Akun VPN
   if (urlPath === `/${SUB_PATH}`) {
     if (subContent) {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(subContent);
     } else {
-      // Jika konten langganan belum dibuat di RAM, coba baca dari berkas disk cadangan
       try {
         const fileContent = fs.readFileSync(subPath, 'utf-8');
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -748,7 +654,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 🌟 JALUR KHUSUS: API internal rahasia untuk melempar data UUID & Path ke Javascript Browser
   if (urlPath === '/__info') {
     const defaultVless = readPathsFromFile('pathvless.txt', '/vless-argo')[0];
     const defaultVmess = readPathsFromFile('pathvmess.txt', '/vmess-argo')[0];
@@ -757,18 +662,13 @@ const server = http.createServer(async (req, res) => {
     const infoData = {
       uuid: UUID,
       domain: currentActiveDomain || req.headers.host || ARGO_DOMAIN || '',
-      paths: {
-        vless: defaultVless,
-        vmess: defaultVmess,
-        trojan: defaultTrojan
-      }
+      paths: { vless: defaultVless, vmess: defaultVmess, trojan: defaultTrojan }
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(infoData));
     return;
   }
 
-  // Rute Utama: / (Membaca file index.html asli bawaan lu 100%)
   if (urlPath === '/') {
     try {
       const filePath = path.join(__dirname, 'index.html');
@@ -786,4 +686,11 @@ const server = http.createServer(async (req, res) => {
   res.end('Not Found');
 });
 
-server.listen(PORT, () => console.log(`http server is running on port:${PORT}!`));
+server.listen(PORT, () => {
+  console.log(`http server is running on port:${PORT}!`);
+  
+  // 🔥 FIX UTAMA: Ulangi ekstraksi domain setiap 3 detik agar URL Quick Tunnel terbaca di RAM setelah Cloudflared sukses binding
+  setInterval(() => {
+    extractDomains();
+  }, 3000);
+});
