@@ -603,7 +603,7 @@ function cleanFiles() {
     }
   }, 90000);
 }
-cleanFiles();
+// cleanFiles();
 
 async function AddVisitTask() {
   if (!AUTO_ACCESS || !PROJECT_URL) return;
